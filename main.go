@@ -66,6 +66,7 @@ func main() {
 
 	vals := makeBins(rawData, rangeMin, rangeMax, options.numBins)
 	drawHistogram(vals)
+	drawXAxis(rangeMin, rangeMax)
 }
 
 // This is designed to **NOT** return NaNs under any circumstances
@@ -138,10 +139,13 @@ func drawHistogram(vals []float64) {
 
 	// precompute our scaled values just to save some repeated
 	// arithmetic
+	total := 0
 	scaledVals := make([]int, len(vals))
 	for i, val := range vals {
+		total += int(val)
 		scaledVals[i] = int(math.Floor((val / maxVal) * height))
 	}
+	fmt.Printf("N = %d\n", total)
 
 	colsPerBin := width / len(vals)
 	for y := height; y > 0; y-- {
@@ -155,4 +159,39 @@ func drawHistogram(vals []float64) {
 		}
 		fmt.Printf("\n")
 	}
+}
+
+func drawXAxis(rangeMin, rangeMax float64) {
+	tickLocations := []int{9, 29, 49, 69}
+	column := 0
+	for _, tickColumn := range tickLocations {
+		for column < tickColumn {
+			fmt.Printf("-")
+			column++
+		}
+		fmt.Printf("+")
+	}
+	for column < width {
+		fmt.Printf("-")
+		column++
+	}
+	fmt.Printf("\n")
+
+	// now plot the values
+	column = 0
+	step := (rangeMax - rangeMin) / float64(width)
+	for _, tickColumn := range tickLocations {
+		tickValue := rangeMin + (step * (float64(tickColumn) + 0.5))
+		tickStr := strconv.FormatFloat(tickValue, 'g', 8, 64)
+		startCol := tickColumn - (len(tickStr) / 2)
+		for column < startCol {
+			fmt.Printf(" ")
+			column++
+		}
+		fmt.Printf(tickStr)
+		column += len(tickStr)
+		// TODO: figure out why this makes things look better :/
+		column--
+	}
+	fmt.Printf("\n")
 }
