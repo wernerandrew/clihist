@@ -53,4 +53,4 @@ N = 572
     -2.9100922          -1.2533645          0.40336311           2.0600908
 ```
 
-Use `clihist -help` to get a full range of ocmmand line options.
+Use `clihist -help` to get a full range of command line options.
