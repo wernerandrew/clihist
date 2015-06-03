@@ -27,8 +27,8 @@ var options struct {
 func init() {
 	flag.IntVar(&options.numBins, "num-bins", defaultNumBins,
 		"number of bins to include (legal values: 10, 20, 40, 80)")
-	flag.Float64Var(&options.minVal, "min-val", math.Inf(1), "minimum value to graph")
-	flag.Float64Var(&options.maxVal, "max-val", math.Inf(-1), "maximum value to graph")
+	flag.Float64Var(&options.minVal, "min-val", math.Inf(-1), "minimum value to graph")
+	flag.Float64Var(&options.maxVal, "max-val", math.Inf(1), "maximum value to graph")
 	flag.BoolVar(&options.skipErrors, "skip-errors", false, "ignore lines with errors")
 	flag.BoolVar(&options.skipNaN, "skip-nan", true,
 		"if true, ignores lines that parse to NaN. otherwise, bails out with error")
@@ -54,13 +54,13 @@ func main() {
 		os.Exit(1)
 	}
 	if len(rawData) == 0 {
-		fmt.Fprintf(os.Stderr, "No data read!")
+		fmt.Fprintf(os.Stderr, "No data read!\n")
 		return
 	}
 
 	rangeMin, rangeMax := getBinRange(rawData)
-	if math.IsInf(rangeMin, 0) || math.IsInf(rangeMax, 0) {
-		fmt.Fprintf(os.Stderr, "bad bin range: (%f, %f)", rangeMin, rangeMax)
+	if math.IsInf(rangeMin, 0) || math.IsInf(rangeMax, 0) || rangeMax < rangeMin {
+		fmt.Fprintf(os.Stderr, "bad bin range: (%f, %f)\n", rangeMin, rangeMax)
 		os.Exit(1)
 	}
 
@@ -95,8 +95,8 @@ func readRawData() ([]float64, error) {
 
 func getBinRange(rawData []float64) (float64, float64) {
 	// figure out range
-	minVal := options.minVal
-	maxVal := options.maxVal
+	minVal := math.Inf(1)
+	maxVal := math.Inf(-1)
 	for _, val := range rawData {
 		if val < minVal {
 			minVal = val
@@ -106,7 +106,8 @@ func getBinRange(rawData []float64) (float64, float64) {
 		}
 	}
 
-	return minVal, maxVal
+	// allow the options to override our choice
+	return math.Max(minVal, options.minVal), math.Min(maxVal, options.maxVal)
 }
 
 func makeBins(rawData []float64, rangeMin, rangeMax float64, numBins int) []float64 {
@@ -114,12 +115,9 @@ func makeBins(rawData []float64, rangeMin, rangeMax float64, numBins int) []floa
 	step := (rangeMax - rangeMin) / float64(numBins)
 	for _, val := range rawData {
 		whichBin := int(math.Floor((val - rangeMin) / step))
-		if whichBin < 0 {
-			whichBin = 0
-		} else if whichBin >= numBins {
-			whichBin = numBins - 1
+		if whichBin >= 0 && whichBin < numBins {
+			vals[whichBin]++
 		}
-		vals[whichBin]++
 	}
 	return vals
 }
@@ -170,6 +168,7 @@ func drawXAxis(rangeMin, rangeMax float64) {
 			column++
 		}
 		fmt.Printf("+")
+		column++
 	}
 	for column < width {
 		fmt.Printf("-")
@@ -190,8 +189,6 @@ func drawXAxis(rangeMin, rangeMax float64) {
 		}
 		fmt.Printf(tickStr)
 		column += len(tickStr)
-		// TODO: figure out why this makes things look better :/
-		column--
 	}
 	fmt.Printf("\n")
 }
