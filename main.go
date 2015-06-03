@@ -15,17 +15,23 @@ const (
 	height         = 24
 )
 
+// TODO: add log bins
 var options struct {
-	logX    bool
-	logY    bool
-	numBins int
+	numBins    int
+	minVal     float64
+	maxVal     float64
+	skipErrors bool
+	skipNaN    bool
 }
 
 func init() {
-	flag.BoolVar(&options.logX, "log-x", false, "use log x-axis bins")
-	flag.BoolVar(&options.logY, "log-y", false, "use log y-axis bins")
 	flag.IntVar(&options.numBins, "num-bins", defaultNumBins,
 		"number of bins to include (legal values: 10, 20, 40, 80)")
+	flag.Float64Var(&options.minVal, "min-val", math.Inf(1), "minimum value to graph")
+	flag.Float64Var(&options.maxVal, "max-val", math.Inf(-1), "maximum value to graph")
+	flag.BoolVar(&options.skipErrors, "skip-errors", false, "ignore lines with errors")
+	flag.BoolVar(&options.skipNaN, "skip-nan", true,
+		"if true, ignores lines that parse to NaN. otherwise, bails out with error")
 	flag.Parse()
 }
 
@@ -38,53 +44,75 @@ func main() {
 		}
 	}
 	if !binNumOk {
-		fmt.Printf("Illegal number of bins: %d", options.numBins)
+		fmt.Fprintf(os.Stderr, "Illegal number of bins: %d\n", options.numBins)
 		os.Exit(1)
 	}
 
-	_, vals, err := makeBins(options.logX, options.logY, options.numBins)
-	if err != nil {
-		fmt.Printf("Error reading from stdin: %v\n", err)
-		os.Exit(1)
-	}
-	graphVals(vals)
-}
-
-func makeBins(logX, logY bool, numBins int) ([]float64, []float64, error) {
-	midpoints := make([]float64, numBins)
-	vals := make([]float64, numBins)
 	rawData, err := readRawData()
 	if err != nil {
-		return midpoints, vals, err
+		fmt.Fprintf(os.Stderr, "Error reading data: %v\n")
+		os.Exit(1)
 	}
 	if len(rawData) == 0 {
-		return midpoints, vals, fmt.Errorf("no data parsed")
+		fmt.Fprintf(os.Stderr, "No data read!")
+		return
 	}
 
+	rangeMin, rangeMax := getBinRange(rawData)
+	if math.IsInf(rangeMin, 0) || math.IsInf(rangeMax, 0) {
+		fmt.Fprintf(os.Stderr, "bad bin range: (%f, %f)", rangeMin, rangeMax)
+		os.Exit(1)
+	}
+
+	vals := makeBins(rawData, rangeMin, rangeMax, options.numBins)
+	drawHistogram(vals)
+}
+
+// This is designed to **NOT** return NaNs under any circumstances
+func readRawData() ([]float64, error) {
+	result := make([]float64, 0)
+	stdinReader := bufio.NewScanner(os.Stdin)
+	for stdinReader.Scan() {
+		thisLine := stdinReader.Text()
+		val, err := strconv.ParseFloat(thisLine, 64)
+		if err != nil {
+			if options.skipErrors {
+				continue
+			}
+			return result, fmt.Errorf("Error parsing line %s: %v", thisLine, err)
+		}
+		if math.IsNaN(val) {
+			if options.skipNaN {
+				continue
+			}
+			return result, fmt.Errorf("Found NaN parsing following line: %s", thisLine)
+		}
+		result = append(result, val)
+	}
+	return result, nil
+}
+
+func getBinRange(rawData []float64) (float64, float64) {
 	// figure out range
-	var minVal, maxVal float64
-	for i, val := range rawData {
-		if i == 0 {
+	minVal := options.minVal
+	maxVal := options.maxVal
+	for _, val := range rawData {
+		if val < minVal {
 			minVal = val
+		}
+		if val > maxVal {
 			maxVal = val
-		} else {
-			if val < minVal {
-				minVal = val
-			}
-			if val > maxVal {
-				maxVal = val
-			}
 		}
 	}
 
-	// figure out bin midpoints
-	step := (maxVal - minVal) / float64(numBins)
-	for i := 0; i < numBins; i++ {
-		midpoints[i] = step * (float64(i) + 0.5)
-	}
-	// and now add to the bins
+	return minVal, maxVal
+}
+
+func makeBins(rawData []float64, rangeMin, rangeMax float64, numBins int) []float64 {
+	vals := make([]float64, numBins)
+	step := (rangeMax - rangeMin) / float64(numBins)
 	for _, val := range rawData {
-		whichBin := int(math.Floor((val - minVal) / step))
+		whichBin := int(math.Floor((val - rangeMin) / step))
 		if whichBin < 0 {
 			whichBin = 0
 		} else if whichBin >= numBins {
@@ -92,10 +120,10 @@ func makeBins(logX, logY bool, numBins int) ([]float64, []float64, error) {
 		}
 		vals[whichBin]++
 	}
-	return midpoints, vals, nil
+	return vals
 }
 
-func graphVals(vals []float64) {
+func drawHistogram(vals []float64) {
 	// for help in normalizing
 	maxVal := float64(0)
 	for _, val := range vals {
@@ -127,18 +155,4 @@ func graphVals(vals []float64) {
 		}
 		fmt.Printf("\n")
 	}
-}
-
-func readRawData() ([]float64, error) {
-	result := make([]float64, 0)
-	stdinReader := bufio.NewScanner(os.Stdin)
-	for stdinReader.Scan() {
-		thisLine := stdinReader.Text()
-		val, err := strconv.ParseFloat(thisLine, 64)
-		if err != nil {
-			return result, fmt.Errorf("Error parsing line %s: %v", thisLine, err)
-		}
-		result = append(result, val)
-	}
-	return result, nil
 }
